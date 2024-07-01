@@ -1,4 +1,4 @@
-import { test, expect, Page, chromium, Browser } from "@playwright/test";
+import { test, expect, Page, chromium, Browser, ChromiumBrowserContext } from "@playwright/test";
 
 const BOT_TOKEN = process.env.BOT_TOKEN!; 
 const CHAT_ID_1 = process.env.CHAT_ID_1!;
@@ -44,10 +44,18 @@ const checkTermForCity = async (page: Page, city: string, cityName: string) => {
         .selectOption(
             "%C4%8Desk%C3%A9%20re%C3%A1lie%20%2B%20%C4%8Desk%C3%BD%20jazyk"
         );
-    await page.locator("#select_termin").selectOption(label).catch(async () => {
+    
+    try {
+        await page.locator("#select_termin").selectOption(label);
+    } catch {
         label = "7.12.2024"
-        return await page.locator("#select_termin").selectOption(label)
-    });
+        try {
+            await page.locator("#select_termin").selectOption(label);
+        } catch {
+            console.log(`No available dates found for ${cityName}`);
+            return; // Exit the function, effectively ending the test successfully
+        }
+    }
 
     await page.waitForTimeout(3000);
     const response = await page
@@ -66,64 +74,97 @@ const checkTermForCity = async (page: Page, city: string, cityName: string) => {
     }
 };
 
-async function runTest(browser: Browser, city: string, cityName: string, maxRetries = 10) {
-    let attempts = 0;
-    while (attempts < maxRetries) {
-        try {
-            const page = await browser.newPage();
-            await page.waitForTimeout(2000);
-            await checkTermForCity(page, city, cityName);
-            await page.close();
-            break; // If successful, exit the loop
-        } catch (error) {
-            console.error(`Attempt ${attempts + 1} failed:`, error);
-            attempts++;
-            if (attempts >= maxRetries) {
-                throw new Error(
-                    `Max retries (${maxRetries}) reached. Test failed.`
-                );
-            }
-            // Check if the browser is closed and reopen if necessary
-            if (!browser.isConnected()) {
-                console.log("Browser disconnected. Reopening...");
-                browser = await chromium.launch();
-            }
+// Simplify runTest to run the test once without retry logic
+async function runTest(context: ChromiumBrowserContext, city: string, cityName: string) {
+    let page;
+    try {
+        page = await context.newPage();
+        await checkTermForCity(page, city, cityName);
+    } finally {
+        if (page) {
+            await page.close().catch(e => console.error('Error closing page:', e));
         }
     }
 }
 
-test("check if there is a bookable slot Praha-Krystal", async () => {
-    const browser = await chromium.launch();
-    try {
-        await runTest(browser, "Praha-Krystal", 'Praha-Krystal');
-    } finally {
-        await browser.close();
-    }
-});
+async function runTestWithContextRestart(
+    context: ChromiumBrowserContext,
+    city: string,
+    cityName: string,
+    chromiumInstance: typeof chromium,
+    maxRetries = 2
+) {
+    let attempts = 0;
+    while (attempts < maxRetries) {
+        try {
+            await runTest(context, city, cityName);
+            break; // If successful, exit the loop
+        } catch (error) {
+            console.error(`Attempt ${attempts + 1} failed:`, error);
+            attempts++;
 
-test("check if there is a bookable slot Praha-Voršilská", async () => {
-    const browser = await chromium.launch();
-    try {
-        await runTest(browser, "Praha-Vor%C5%A1ilsk%C3%A1", 'Praha-Vorsilska');
-    } finally {
-        await browser.close();
-    }
-});
+            if (error.message.includes("close")) {
+                console.log("Context closed. Recreating context...");
+                try {
+                    context = await chromiumInstance.launchPersistentContext('', {
+                        headless: false,
+                        ignoreDefaultArgs: ['--hide-scrollbars', '--mute-audio'],
+                        env: {
+                            ...process.env,
+                            DISPLAY: process.env.DISPLAY || ':99.0',
+                        },
+                    });
+                } catch (contextError) {
+                    console.error("Failed to recreate context:", contextError);
+                }
+            }
 
-test("check if there is a bookable slot Podebrady", async () => {
-    const browser = await chromium.launch();
-    try {
-        await runTest(browser, "Pod%C4%9Bbrady", 'Podebrady');
-    } finally {
-        await browser.close();
-    }
-});
+            if (attempts >= maxRetries) {
+                throw new Error(`Max retries (${maxRetries}) reached. Test failed.`);
+            }
 
-test("check if there is a bookable slot České Budějovice", async () => {
-    const browser = await chromium.launch();
-    try {
-        await runTest(browser, "%C4%8Cesk%C3%A9%20Bud%C4%9Bjovice", 'Ceské Budějovice');
-    } finally {
-        await browser.close();
+            // Add a small delay between attempts
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
     }
+    return context; // Return the potentially new context
+}
+
+
+// Modify each test to use a shared browser context
+test.describe('Booking slot checks', () => {
+    let context: ChromiumBrowserContext;
+
+    test.beforeAll(async () => {
+        context = await chromium.launchPersistentContext('', {
+            headless: false, // Run in headed mode
+            ignoreDefaultArgs: ['--hide-scrollbars', '--mute-audio'],
+            env: {
+                ...process.env,
+                DISPLAY: process.env.DISPLAY || ':99.0', // Set DISPLAY for Xvfb in CI
+            },
+        });
+    });
+
+    test.afterAll(async () => {
+        if (context) {
+          await context.close().catch(e => console.error('Error closing context:', e));
+        }
+    });
+    
+    test("check if there is a bookable slot Praha-Krystal", async () => {
+    context = await runTestWithContextRestart(context, "Praha-Krystal", 'Praha-Krystal', chromium);
+    });
+
+    test("check if there is a bookable slot Praha-Voršilská", async () => {
+    context = await runTestWithContextRestart(context, "Praha-Vor%C5%A1ilsk%C3%A1", 'Praha-Vorsilska', chromium);
+    });
+
+    test("check if there is a bookable slot Podebrady", async () => {
+    context = await runTestWithContextRestart(context, "Pod%C4%9Bbrady", 'Podebrady', chromium);
+    });
+
+    test("check if there is a bookable slot České Budějovice", async () => {
+    context = await runTestWithContextRestart(context, "%C4%8Cesk%C3%A9%20Bud%C4%9Bjovice", 'Ceské Budějovice', chromium);
+    });
 });
