@@ -9,6 +9,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const EXAM_TYPES = ["%C4%8Desk%C3%A9%20re%C3%A1lie%20%2B%20%C4%8Desk%C3%BD%20jazyk"]
+
 
 async function sendTelegramMessage(chaidID: string, message: string) {
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
@@ -33,7 +35,7 @@ async function sendTelegramMessage(chaidID: string, message: string) {
     }
 }
 
-const checkTermForCity = async (page: Page, city: string, cityName: string) => {
+const checkTermForCity = async (page: Page, city: string, cityName: string, examType: string) => {
     var label = "19.10.2024"
     await page.goto(
         "https://ujop.cuni.cz/UJOP-371.html?ujopcmsid=8:zkouska-z-ralii-a-cestiny-pro-obcanstvi-cr"
@@ -42,7 +44,7 @@ const checkTermForCity = async (page: Page, city: string, cityName: string) => {
     await page
         .locator("#select_cast_zkousky")
         .selectOption(
-            "%C4%8Desk%C3%A9%20re%C3%A1lie%20%2B%20%C4%8Desk%C3%BD%20jazyk"
+            examType
         );
     
     try {
@@ -75,11 +77,11 @@ const checkTermForCity = async (page: Page, city: string, cityName: string) => {
 };
 
 // Simplify runTest to run the test once without retry logic
-async function runTest(context: ChromiumBrowserContext, city: string, cityName: string) {
+async function runTest(context: ChromiumBrowserContext, city: string, cityName: string, examType: string) {
     let page;
     try {
         page = await context.newPage();
-        await checkTermForCity(page, city, cityName);
+        await checkTermForCity(page, city, cityName, examType);
     } finally {
         if (page) {
             await page.close().catch(e => console.error('Error closing page:', e));
@@ -91,13 +93,14 @@ async function runTestWithContextRestart(
     context: ChromiumBrowserContext,
     city: string,
     cityName: string,
+    examType: string,
     chromiumInstance: typeof chromium,
     maxRetries = 2
 ) {
     let attempts = 0;
     while (attempts < maxRetries) {
         try {
-            await runTest(context, city, cityName);
+            await runTest(context, city, cityName, examType);
             break; // If successful, exit the loop
         } catch (error) {
             console.error(`Attempt ${attempts + 1} failed:`, error);
@@ -152,24 +155,33 @@ test.describe('Booking slot checks', () => {
         }
     });
     
-    test("check if there is a bookable slot Praha-Krystal", async () => {
-    context = await runTestWithContextRestart(context, "Praha-Krystal", 'Praha-Krystal', chromium);
-    });
+    // test("check if there is a bookable slot Praha-Krystal", async () => {
+    //     for (var examType in EXAM_TYPES) {
+    //         await runTestWithContextRestart(context, "Praha-Krystal", 'Praha-Krystal', examType, chromium);
+    //     }
+    // });
 
-    test("check if there is a bookable slot Praha-Voršilská", async () => {
-    context = await runTestWithContextRestart(context, "Praha-Vor%C5%A1ilsk%C3%A1", 'Praha-Vorsilska', chromium);
-    });
+    // test("check if there is a bookable slot Praha-Voršilská", async () => {
+    //     for (var examType in EXAM_TYPES) {
+    //         await runTestWithContextRestart(context, "Praha-Vor%C5%A1ilsk%C3%A1", 'Praha-Vorsilska', examType, chromium);
+    //     }
+    // });
 
-    test("check if there is a bookable slot Podebrady", async () => {
-    context = await runTestWithContextRestart(context, "Pod%C4%9Bbrady", 'Podebrady', chromium);
-    });
+    // test("check if there is a bookable slot Podebrady", async () => {
+    //     for (var examType in EXAM_TYPES) {
+    //         await runTestWithContextRestart(context, "Pod%C4%9Bbrady", 'Podebrady', examType, chromium);
+    //     }
+    // });
 
-    test("check if there is a bookable slot České Budějovice", async () => {
-    context = await runTestWithContextRestart(context, "%C4%8Cesk%C3%A9%20Bud%C4%9Bjovice", 'Ceské Budějovice', chromium);
-    });
+    // test("check if there is a bookable slot České Budějovice", async () => {
+    //     for (var examType in EXAM_TYPES) {    
+    //         await runTestWithContextRestart(context, "%C4%8Cesk%C3%A9%20Bud%C4%9Bjovice", 'Ceské Budějovice', examType,  chromium);
+    //     }
+    // });
 
     test("check if there is a bookable slot Brno", async () => {
-        context = await runTestWithContextRestart(context, "Brno", 'Brno', chromium);
-     });
+        for (var examType in EXAM_TYPES) {
+            context = await runTestWithContextRestart(context, "Brno", 'Brno', examType, chromium);
+        }
+    });
 });
-
