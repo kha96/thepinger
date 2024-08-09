@@ -167,4 +167,9 @@ test.describe('Booking slot checks', () => {
     test("check if there is a bookable slot České Budějovice", async () => {
     context = await runTestWithContextRestart(context, "%C4%8Cesk%C3%A9%20Bud%C4%9Bjovice", 'Ceské Budějovice', chromium);
     });
+
+    test("check if there is a bookable slot Brno", async () => {
+        context = await runTestWithContextRestart(context, "Brno", 'Brno', chromium);
+     });
 });
+
