@@ -180,7 +180,8 @@ test.describe('Booking slot checks', () => {
     // });
 
     test("check if there is a bookable slot Brno", async () => {
-        for (var examType in EXAM_TYPES) {
+        for (var i in EXAM_TYPES) {
+            const examType = EXAM_TYPES[i]
             context = await runTestWithContextRestart(context, "Brno", 'Brno', examType, chromium);
         }
     });
